@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.8)
+project( DoF_Renderer )
+find_package( OpenCV REQUIRED )
+add_executable( test_dof_renderer src/test_dof_renderer.cpp src/dof_renderer.cpp src/debugging_functions.cpp )
+target_link_libraries( test_dof_renderer ${OpenCV_LIBS} )
