@@ -114,7 +114,7 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
     	gaussianKernel.push_back(getGaussianKernel(filter_sizes_[i], -1, CV_32F));
     	h_kernel.push_back(gaussianKernel[i].ptr<float>(0));
         // debugPrintMat<float>(gaussianKernel[i],"kernel");
-        checkCudaErrors(copyKernel(h_kernel[i], i));
+        copyKernel(h_kernel[i], i);
     }
     // testKernel();
 

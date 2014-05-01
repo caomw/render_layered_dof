@@ -119,12 +119,12 @@ extern "C" void GpuConvolveSeparableRows(float *d_dst, float *d_src, float* d_de
     getLastCudaError("convolveSeparableRowsKernel() execution failed\n");
 }
 
-extern "C" size_t CreateCudaImageWithZeroPadding(float* d_dst, float* h_src, int image_width, int image_height){
-    size_t pitch;
-    checkCudaErrors(cudaMallocPitch((void **)&d_dst, *pitch, image_width * sizeof(float), image_height * sizeof(float)));
-    checkCudaErrors(cudaMemcpy2D((void*) d_dst, pitch, h_src, image_width, image_width, image_height, cudaMemcpyHostToDevice));
-    return pitch;
-}
+// extern "C" size_t CreateCudaImageWithZeroPadding(float* d_dst, float* h_src, int image_width, int image_height){
+//     size_t pitch;
+//     checkCudaErrors(cudaMallocPitch((void **)&d_dst, pitch, image_width * sizeof(float), image_height * sizeof(float)));
+//     checkCudaErrors(cudaMemcpy2D((void*) d_dst, pitch, h_src, image_width, image_width, image_height, cudaMemcpyHostToDevice));
+//     return pitch;
+// }
 
 #define COL_TILE_WIDTH 16
 #define COL_TILE_HEIGHT 24
