@@ -16,11 +16,7 @@ int main(int argc, char* argv[])
 
     DepthOfFieldRenderer dof_renderer(0.1);
     dof_renderer.Run(input_image, depth_map, output_image);
-
-    // dof_renderer.run(input_image, depth_map, output_image);
-
-    // imshow("output_image", output_image);
+    imwrite("rendered_output.png",output_image);
     return 0;
-    // return dof_renderer.exec();
 }
 

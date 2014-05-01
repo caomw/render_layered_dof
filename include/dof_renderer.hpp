@@ -15,7 +15,6 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include "../include/debugging_functions.hpp"
-// #include "../include/convolutionSeparable_common.h"
 #include "../include/dof_gpu.h" 
 
 // CUDA runtime

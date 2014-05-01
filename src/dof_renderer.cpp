@@ -84,16 +84,8 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
     input_image_float.convertTo(input_image_float, CV_32FC1);
     input_image_float *= 1./255;
 
-    // input_image_float = input_image_float(Range(0,576),Range(0,896));
-
-    // if (!input_image_float.isContinuous())
-    // 	cout << "not continuous\n";
-
-    // Mat input_image_cropped = input_image_float.clone();
-
-    // if (!input_image_cropped.isContinuous()){
-    // 	cout << "not continuous\n";
-    // }
+    while (!input_image_float.isContinuous())
+        input_image_float = input_image_float.clone();
 
     int padding = ceil((float)image_width_/32)*32 - image_width_;
     Mat padded_input_image, padded_depth_map;
@@ -113,7 +105,6 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
     for(int i = 0; i < filter_sizes_.size(); ++i){
     	gaussianKernel.push_back(getGaussianKernel(filter_sizes_[i], -1, CV_32F));
     	h_kernel.push_back(gaussianKernel[i].ptr<float>(0));
-        // debugPrintMat<float>(gaussianKernel[i],"kernel");
         copyKernel(h_kernel[i], i);
     }
     // testKernel();
@@ -158,19 +149,22 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
 	printf("\nCopying results ...\n\n");
     checkCudaErrors(cudaMemcpy(h_output_image, d_output_image, padded_image_width * padded_image_height * sizeof(float), cudaMemcpyDeviceToHost));
     Mat output_image_gray(padded_image_height, padded_image_width, CV_32FC1, h_output_image);
-    imshow("output_image_gray", output_image_gray);
+    output_image_ = output_image_gray.colRange(Range(0,image_width_));
+    output_image_ *= 255;
+    output_image_.convertTo(output_image_, CV_8UC1);
 
+    imshow("output_image", output_image_);
 
     checkCudaErrors(cudaFree(d_buffer_image));
     checkCudaErrors(cudaFree(d_output_image));
     checkCudaErrors(cudaFree(d_input_image));
+
 
 }
 
 int DepthOfFieldRenderer::Run(InputArray _input_image, InputArray _depth_map, OutputArray _output_image){
 	input_image_ = _input_image.getMat();
 	depth_map_ = _depth_map.getMat();
-	output_image_ = _output_image.getMat();
 	image_width_ = input_image_.cols;
 	image_height_ = input_image_.rows;
 
@@ -181,7 +175,7 @@ int DepthOfFieldRenderer::Run(InputArray _input_image, InputArray _depth_map, Ou
 	namedWindow(window_name);
 	imshow(window_name, input_image_);
 	setMouseCallback(window_name, ProcessSelectedPoint, this);
-
     waitKey(0);
+    output_image_.copyTo(_output_image);
 	return 0;
 }
