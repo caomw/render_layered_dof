@@ -43,4 +43,4 @@ README
 
 ## 5. EXAMPLE OUTPUT
 
-![Example Output](https://github.com/vatsnv/render_layered_dof/blob/master/images/output.tiff)
+![Example Output](https://github.com/vatsnv/render_layered_dof/blob/master/images/output.png)
