@@ -76,84 +76,94 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
 	cout << "Focusing on point " << origin << " at depth " << depth_of_focus << " ...\n";
 	cout << "Rendering depth of field...\n";
 
-    float *h_Input, *h_Buffer, *h_OutputCPU, *h_OutputGPU;
-    // vector<float*>h_Kernel(filter_sizes_.size());
-    float *d_Input, *d_Output, *d_Buffer;
+    float *h_input_image, *h_buffer_image, *h_output_image, *h_depth_map;
+    float *d_input_image, *d_output_image, *d_buffer_image, *d_depth_map;
 
     Mat input_image_float;
     cvtColor(input_image_, input_image_float, CV_BGR2GRAY);
     input_image_float.convertTo(input_image_float, CV_32FC1);
     input_image_float *= 1./255;
 
-    input_image_float = input_image_float(Range(0,576),Range(0,896));
+    // input_image_float = input_image_float(Range(0,576),Range(0,896));
 
-    if (!input_image_float.isContinuous())
-    	cout << "not continuous\n";
+    // if (!input_image_float.isContinuous())
+    // 	cout << "not continuous\n";
 
-    Mat input_image_cropped = input_image_float.clone();
+    // Mat input_image_cropped = input_image_float.clone();
 
-    if (!input_image_cropped.isContinuous()){
-    	cout << "not continuous\n";
-    }
+    // if (!input_image_cropped.isContinuous()){
+    // 	cout << "not continuous\n";
+    // }
 
-    image_width_ = input_image_cropped.cols;
-    image_height_ = input_image_cropped.rows;
+    int padding = ceil((float)image_width_/32)*32 - image_width_;
+    Mat padded_input_image, padded_depth_map;
+    copyMakeBorder(input_image_float, padded_input_image, 0, 0, 0, padding, BORDER_CONSTANT, 0);
+    copyMakeBorder(depth_map_, padded_depth_map, 0, 0, 0, padding, BORDER_CONSTANT, 0);
 
-    cout << input_image_cropped.size() << "\n";
-    h_Input = input_image_cropped.ptr<float>(0);
+    int padded_image_width = padded_input_image.cols;
+    int padded_image_height = padded_input_image.rows;
 
-    h_Buffer    = (float *)malloc(image_width_ * image_height_ * sizeof(float));
-    h_OutputGPU    = (float *)malloc(image_width_ * image_height_ * sizeof(float));
+    h_input_image = padded_input_image.ptr<float>(0);
+    h_buffer_image    = (float *)malloc(padded_image_width * padded_image_height * sizeof(float));
+    h_output_image    = (float *)malloc(padded_image_width * padded_image_height * sizeof(float));
+    h_depth_map = padded_depth_map.ptr<float>(0);
 
     vector<Mat> gaussianKernel;
-    vector<float*> h_Kernel;
+    vector<float*> h_kernel;
     for(int i = 0; i < filter_sizes_.size(); ++i){
     	gaussianKernel.push_back(getGaussianKernel(filter_sizes_[i], -1, CV_32F));
-    	h_Kernel.push_back(gaussianKernel[i].ptr<float>(0));
+    	h_kernel.push_back(gaussianKernel[i].ptr<float>(0));
+        // debugPrintMat<float>(gaussianKernel[i],"kernel");
+        checkCudaErrors(copyKernel(h_kernel[i], i));
     }
+    // testKernel();
 
-    printf("Allocating and initializing CUDA arrays...\n");
-    checkCudaErrors(cudaMalloc((void **)&d_Input,   image_width_ * image_height_ * sizeof(float)));
-    checkCudaErrors(cudaMalloc((void **)&d_Output,  image_width_ * image_height_ * sizeof(float)));
-    checkCudaErrors(cudaMalloc((void **)&d_Buffer , image_width_ * image_height_ * sizeof(float)));
+    printf("\nAllocating memory on GPU ...\n\n");
 
-    // Testing GPU convolution with single kernel first
-    setConvolutionKernel(h_Kernel[5]);
+    checkCudaErrors(cudaMalloc((void **)&d_input_image,   padded_image_width * padded_image_height * sizeof(float)));
+    checkCudaErrors(cudaMalloc((void **)&d_output_image,  padded_image_width * padded_image_height * sizeof(float)));
+    checkCudaErrors(cudaMalloc((void **)&d_buffer_image , padded_image_width * padded_image_height * sizeof(float)));
+    checkCudaErrors(cudaMalloc((void **)&d_depth_map , padded_image_width * padded_image_height * sizeof(float)));
 
-    checkCudaErrors(cudaMemcpy(d_Input, h_Input, image_width_ * image_height_ * sizeof(float), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_input_image, h_input_image, padded_image_width * padded_image_height * sizeof(float), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_depth_map, h_depth_map, padded_image_width * padded_image_height * sizeof(float), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemset(d_output_image, 0, padded_image_width * padded_image_height * sizeof(float)));
 
-    printf("Running GPU convolution... \n");
-
-    checkCudaErrors(cudaDeviceSynchronize());
-    sdkResetTimer(&hTimer);
-    sdkStartTimer(&hTimer);
-    convolutionRowsGPU(
-        d_Buffer,
-        d_Input,
-        image_width_,
-       image_height_ 
-    );
-
-    convolutionColumnsGPU(
-        d_Output,
-        d_Buffer,
-        image_width_,
-       image_height_ 
-    );
+    printf("Running row convolution on GPU ... \n");
 
     checkCudaErrors(cudaDeviceSynchronize());
-    sdkStopTimer(&hTimer);
+    // int kernel_ind = 2;
+    GpuConvolveSeparableRows(
+        d_buffer_image,
+        d_input_image,
+        d_depth_map,
+        image_width_,
+       image_height_,
+       depth_of_focus
+    );
+ 
+    printf("Running column convolution on GPU ... \n");
 
-	printf("\nReading back GPU results...\n\n");
-    checkCudaErrors(cudaMemcpy(h_OutputGPU, d_Output, image_width_ * image_height_ * sizeof(float), cudaMemcpyDeviceToHost));
-    Mat output_image_gray(image_height_, image_width_, CV_32FC1, h_OutputGPU);
+    GpuConvolveSeparableCols(
+        d_output_image,
+        d_buffer_image,
+        d_depth_map,
+        image_width_,
+       image_height_,
+       depth_of_focus
+    );
+
+    checkCudaErrors(cudaDeviceSynchronize());
+
+	printf("\nCopying results ...\n\n");
+    checkCudaErrors(cudaMemcpy(h_output_image, d_output_image, padded_image_width * padded_image_height * sizeof(float), cudaMemcpyDeviceToHost));
+    Mat output_image_gray(padded_image_height, padded_image_width, CV_32FC1, h_output_image);
     imshow("output_image_gray", output_image_gray);
 
-    cout << gaussianKernel[5].size() << "\n";
 
-    checkCudaErrors(cudaFree(d_Buffer));
-    checkCudaErrors(cudaFree(d_Output));
-    checkCudaErrors(cudaFree(d_Input));
+    checkCudaErrors(cudaFree(d_buffer_image));
+    checkCudaErrors(cudaFree(d_output_image));
+    checkCudaErrors(cudaFree(d_input_image));
 
 }
 
@@ -171,25 +181,6 @@ int DepthOfFieldRenderer::Run(InputArray _input_image, InputArray _depth_map, Ou
 	namedWindow(window_name);
 	imshow(window_name, input_image_);
 	setMouseCallback(window_name, ProcessSelectedPoint, this);
-
-
-
-    // Mat histogram;
-	// int histSize = 10;
-	// float range[] = { 0, 1 } ;
-	// const float* histRange = { range };
-	// bool uniform = true; bool accumulate = false;
-    // calcHist(&depth_map_, 1, 0, Mat(), histogram, 1, &histSize, &histRange, uniform, accumulate);
-    // debugPrintMat<float>(histogram, "histogram");
-    // namedWindow("depth_map_");
-    // imshow("depth_map_", depth_map_);
-    // setMouseCallback("depth_map_", PrintPixelValue, &depth_map_);
-
-
-
-
-    // imshow("input_image_", input_image_);
-    // imshow("depth_map", depth_map);
 
     waitKey(0);
 	return 0;
