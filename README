@@ -2,14 +2,30 @@
 
  1.) Prerequisites
  2.) Building
+ 3.) Usage
  
 == 1. PREREQUISITES ==
 
  This project requires:
-  * Cross-platform Make (CMake) v2.6.2+
   * GNU Make or equivalent.
-  * GCC or an alternative, reasonably conformant C++ compiler.
-  * Boost C++ Libraries v1.37+ [HEADERS and LIBRARIES]
+  * GCC, clang C++ compilers.
+  * NVIDIA CUDA 5.5 and above
+  * OpenCV 2.4 and above
 
 == 2. BUILDING ==
- 
+  * Clone the repository using:
+  
+   git clone https://github.com/vatsnv/render_layered_dof.git
+  
+  * Navigate to the build directory and run make:
+  
+  cd build
+  make
+  
+ == 3. USAGE ==
+  * Run the executable in the build directory with the sample input image and depth map as arguments.
+  
+   cd build
+   ./test_dof_renderer ../images/image.png ../images/depth_map.png
+  
+  Click on any point in the displayed image to render the depth of field effect (currently works only in grayscale). Press any key on the keyboard to exit.
