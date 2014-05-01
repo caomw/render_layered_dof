@@ -204,5 +204,5 @@ extern "C" void GpuConvolveSeparableCols(float *d_dst, float *d_src, float* d_de
     cudaEventElapsedTime(&time, start, stop);
     printf ("Time for the kernel: %f ms\n", time);
 
-    getLastCudaError("convolveSeparableRowsKernel() execution failed\n");
+    getLastCudaError("convolveSeparableColsKernel() execution failed\n");
 }
