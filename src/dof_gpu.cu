@@ -70,7 +70,6 @@ __global__ void convolveSeparableRowsKernel(unsigned char* d_dst, unsigned char*
     for(int i = 0; i < ROW_TILES_IN_BLOCK; ++i){
         if (x_image < image_width*3){
             int kernel_radius = (int)floor(10*fabs(d_depth_map[y_image * depth_map_pitch/sizeof(float) + x_image/3] - focus_depth));
-            // d_dst[y_image * pitch + x_image] = kernel_radius * 255 / 10;
             if (kernel_radius > 0){
                 float sum = 0;
                 int kernel_start = kernel_radius * kernel_radius - 1;
