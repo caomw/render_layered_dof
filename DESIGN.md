@@ -74,8 +74,8 @@ Vertical convolution is almost the same, except that instead of dividing the blo
 ### 3.6 Constant memory usage
 The constant memory area is used to store the convolution kernels of different radii, since their values are not meant to change while execution. The kernels are stored in a single array, one after another as follows:
 
-    index:       0,1...   3,4,5...    8,9,10...       15,16...          
-    c_kernel:   | . . . | . . . . . | . . . . . . . | . . . . . . . . . |
+    index:        0,1...  3,4,5...    8,9,10...       15,16...          
+    c_kernel[]: | . . . | . . . . . | . . . . . . . | . . . . . . . . . |
     radius:         1         2             3                 4
 
 The location of the kernel of radius R can be obtained as (R-1)*(R+1)
