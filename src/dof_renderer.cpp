@@ -76,7 +76,7 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
 	cout << "Focusing on point " << origin << " at depth " << depth_of_focus << " ...\n";
 	cout << "Rendering depth of field...\n";
 
-    float *h_input_image, *h_buffer_image, *h_output_image, *h_depth_map;
+    float *h_input_image, *h_output_image, *h_depth_map;
     float *d_input_image, *d_output_image, *d_buffer_image, *d_depth_map;
 
     Mat input_image_float;
@@ -86,19 +86,6 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
 
     while (!input_image_float.isContinuous())
         input_image_float = input_image_float.clone();
-
-    int padding = ceil((float)image_width_/32)*32 - image_width_;
-    Mat padded_input_image, padded_depth_map;
-    copyMakeBorder(input_image_float, padded_input_image, 0, 0, 0, padding, BORDER_CONSTANT, 0);
-    copyMakeBorder(depth_map_, padded_depth_map, 0, 0, 0, padding, BORDER_CONSTANT, 0);
-
-    int padded_image_width = padded_input_image.cols;
-    int padded_image_height = padded_input_image.rows;
-
-    h_input_image = padded_input_image.ptr<float>(0);
-    h_buffer_image    = (float *)malloc(padded_image_width * padded_image_height * sizeof(float));
-    h_output_image    = (float *)malloc(padded_image_width * padded_image_height * sizeof(float));
-    h_depth_map = padded_depth_map.ptr<float>(0);
 
     vector<Mat> gaussianKernel;
     vector<float*> h_kernel;
@@ -111,50 +98,42 @@ void DepthOfFieldRenderer::RenderDoF(Point origin){
 
     printf("\nAllocating memory on GPU ...\n\n");
 
-    checkCudaErrors(cudaMalloc((void **)&d_input_image,   padded_image_width * padded_image_height * sizeof(float)));
-    checkCudaErrors(cudaMalloc((void **)&d_output_image,  padded_image_width * padded_image_height * sizeof(float)));
-    checkCudaErrors(cudaMalloc((void **)&d_buffer_image , padded_image_width * padded_image_height * sizeof(float)));
-    checkCudaErrors(cudaMalloc((void **)&d_depth_map , padded_image_width * padded_image_height * sizeof(float)));
+    size_t pitch; // Adjusted width of image (in bytes) to ensure alignment in GPU memory
 
-    checkCudaErrors(cudaMemcpy(d_input_image, h_input_image, padded_image_width * padded_image_height * sizeof(float), cudaMemcpyHostToDevice));
-    checkCudaErrors(cudaMemcpy(d_depth_map, h_depth_map, padded_image_width * padded_image_height * sizeof(float), cudaMemcpyHostToDevice));
-    checkCudaErrors(cudaMemset(d_output_image, 0, padded_image_width * padded_image_height * sizeof(float)));
+    // Copy input image to device global memory
+    h_input_image = input_image_float.ptr<float>(0);
+    checkCudaErrors(cudaMallocPitch(&d_input_image, &pitch, image_width_ * sizeof(float), image_height_));
+    checkCudaErrors(cudaMemcpy2D(d_input_image, pitch, h_input_image, image_width_*sizeof(float), image_width_*sizeof(float), image_height_, cudaMemcpyHostToDevice));
+
+    // Copy depth map into device global memory
+    h_depth_map = depth_map_.ptr<float>(0);
+    checkCudaErrors(cudaMallocPitch(&d_depth_map, &pitch, image_width_ * sizeof(float), image_height_));
+    checkCudaErrors(cudaMemcpy2D(d_depth_map, pitch, h_depth_map, image_width_*sizeof(float), image_width_*sizeof(float), image_height_, cudaMemcpyHostToDevice));
+
+    // Allocate device global memory and host memory for output image
+    h_output_image    = (float *)malloc(image_width_ * image_height_ * sizeof(float));
+    checkCudaErrors(cudaMalloc((void **)&d_output_image,  pitch * image_height_));
+    checkCudaErrors(cudaMemset(d_output_image, 0, pitch * image_height_));
+
+    // Allocate device memory for buffer
+    checkCudaErrors(cudaMalloc((void **)&d_buffer_image , pitch * image_height_));
 
     printf("Running row convolution on GPU ... \n");
-
     checkCudaErrors(cudaDeviceSynchronize());
-    // int kernel_ind = 2;
-    GpuConvolveSeparableRows(
-        d_buffer_image,
-        d_input_image,
-        d_depth_map,
-        image_width_,
-       image_height_,
-       depth_of_focus
-    );
+    GpuConvolveSeparableRows(d_buffer_image, d_input_image, d_depth_map, image_width_, image_height_, pitch, depth_of_focus);
  
     printf("Running column convolution on GPU ... \n");
-
-    GpuConvolveSeparableCols(
-        d_output_image,
-        d_buffer_image,
-        d_depth_map,
-        image_width_,
-       image_height_,
-       depth_of_focus
-    );
-
+    GpuConvolveSeparableCols(d_output_image, d_buffer_image, d_depth_map, image_width_, image_height_, pitch, depth_of_focus);
     checkCudaErrors(cudaDeviceSynchronize());
 
 	printf("\nCopying results ...\n\n");
-    checkCudaErrors(cudaMemcpy(h_output_image, d_output_image, padded_image_width * padded_image_height * sizeof(float), cudaMemcpyDeviceToHost));
-    Mat output_image_gray(padded_image_height, padded_image_width, CV_32FC1, h_output_image);
-    output_image_ = output_image_gray.colRange(Range(0,image_width_));
-    output_image_ *= 255;
-    output_image_.convertTo(output_image_, CV_8UC1);
+    checkCudaErrors(cudaMemcpy2D(h_output_image, image_width_ * sizeof(float), d_output_image, pitch, image_width_ * sizeof(float), image_height_, cudaMemcpyDeviceToHost));
+
+    Mat output_image_gray(input_image_.size(), CV_32FC1, h_output_image);
+    output_image_gray *= 255;
+    output_image_gray.convertTo(output_image_, CV_8UC1);
 
     imshow("output_image", output_image_);
-
     checkCudaErrors(cudaFree(d_buffer_image));
     checkCudaErrors(cudaFree(d_output_image));
     checkCudaErrors(cudaFree(d_input_image));
