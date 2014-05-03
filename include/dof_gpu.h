@@ -13,7 +13,8 @@
 
 extern "C" void copyKernel(float *kernel_coefficients, int kernel_index);
 extern "C" void testKernel();
-extern "C" void GpuConvolveSeparableRows(float *d_dst, float *d_src, float* d_depth_map, int image_width, int image_height, size_t pitch, float focus_depth);
-extern "C" void GpuConvolveSeparableCols(float *d_dst, float *d_src, float* d_depth_map, int image_width, int image_height, size_t pitch, float focus_depth);
+// extern "C" void GpuConvolveSeparableRows(float *d_dst, float *d_src, float* d_depth_map, int image_width, int image_height, size_t pitch, float focus_depth);
+extern "C" void GpuConvolveSeparableRows(unsigned char *d_dst, unsigned char *d_src, float* d_depth_map, int image_width, int image_height, size_t pitch, size_t depth_map_pitch, float focus_depth);
+extern "C" void GpuConvolveSeparableCols(unsigned char *d_dst, unsigned char *d_src, float* d_depth_map, int image_width, int image_height, size_t pitch, size_t depth_map_pitch, float focus_depth);
 
 #endif //DOF_GPU_H
