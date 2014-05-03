@@ -18,9 +18,9 @@
 #define KERNEL_LENGTH(x) (2 * x + 1)
 #define MAX_KERNEL_LENGTH KERNEL_LENGTH(MAX_KERNEL_RADIUS)
 
-#define ROW_TILE_WIDTH 16
+#define ROW_TILE_WIDTH 32
 #define ROW_TILE_HEIGHT 4
-#define ROW_TILES_IN_BLOCK 8
+#define ROW_TILES_IN_BLOCK 20
 #define ROW_BLOCK_WIDTH ROW_TILES_IN_BLOCK * ROW_TILE_WIDTH
 #define ROW_BLOCK_HEIGHT ROW_TILE_HEIGHT
 
@@ -48,23 +48,19 @@ extern "C" void testKernel(){
 }
 
 __global__ void convolveSeparableRowsKernel(unsigned char* d_dst, unsigned char* d_src, float* d_depth_map, int image_width, int image_height, size_t pitch, size_t depth_map_pitch, float focus_depth){
-    __shared__ unsigned char s_data[ROW_TILE_HEIGHT][3*(ROW_BLOCK_WIDTH + 2 * ROW_TILE_WIDTH)];
+    __shared__ unsigned char s_data[ROW_TILE_HEIGHT][(ROW_BLOCK_WIDTH + 2 * ROW_TILE_WIDTH)];
     int x = threadIdx.x, y = threadIdx.y;
     int x_image, y_image, x_s, y_s;
 
     x_image = blockIdx.x * ROW_BLOCK_WIDTH - ROW_TILE_WIDTH + x;
     y_image = blockIdx.y * ROW_BLOCK_HEIGHT + y;
     x_s = x; y_s = y;
-    s_data[y_s][3*x_s + 0] = x_image < 0 ? 0 : d_src[y_image * pitch + 3*x_image + 0];
-    s_data[y_s][3*x_s + 1] = x_image < 0 ? 0 : d_src[y_image * pitch + 3*x_image + 1];
-    s_data[y_s][3*x_s + 2] = x_image < 0 ? 0 : d_src[y_image * pitch + 3*x_image + 2];
+    s_data[y_s][x_s] = x_image < 0 ? 0 : d_src[y_image * pitch + x_image];
 
     for(int i = 1; i < (ROW_TILES_IN_BLOCK + 2); ++i){
         x_s += ROW_TILE_WIDTH;
         x_image += ROW_TILE_WIDTH;
-        s_data[y_s][3*x_s + 0] = x_image >= image_width ? 0 : d_src[y_image * pitch + 3*x_image + 0];
-        s_data[y_s][3*x_s + 1] = x_image >= image_width ? 0 : d_src[y_image * pitch + 3*x_image + 1];
-        s_data[y_s][3*x_s + 2] = x_image >= image_width ? 0 : d_src[y_image * pitch + 3*x_image + 2];
+        s_data[y_s][x_s] = x_image >= image_width*3 ? 0 : d_src[y_image * pitch + x_image];
     }
     __syncthreads();
 
@@ -72,26 +68,20 @@ __global__ void convolveSeparableRowsKernel(unsigned char* d_dst, unsigned char*
     x_s = ROW_TILE_WIDTH + x;
 
     for(int i = 0; i < ROW_TILES_IN_BLOCK; ++i){
-        if (x_image < image_width){
-            int kernel_radius = (int)floor(10*fabs(d_depth_map[y_image * depth_map_pitch/sizeof(float) + x_image] - focus_depth));
+        if (x_image < image_width*3){
+            int kernel_radius = (int)floor(10*fabs(d_depth_map[y_image * depth_map_pitch/sizeof(float) + x_image/3] - focus_depth));
             // d_dst[y_image * pitch + x_image] = kernel_radius * 255 / 10;
             if (kernel_radius > 0){
-                float sum[] = {0,0,0};
+                float sum = 0;
                 int kernel_start = kernel_radius * kernel_radius - 1;
                 int kernel_mid = kernel_start + kernel_radius;
                 for(int j = -kernel_radius; j <= kernel_radius; ++j){
-                    sum[0] += (float)s_data[y_s][(x_s + j)*3 + 0] *  c_kernel[kernel_mid + j];
-                    sum[1] += (float)s_data[y_s][(x_s + j)*3 + 1] *  c_kernel[kernel_mid + j];
-                    sum[2] += (float)s_data[y_s][(x_s + j)*3 + 2] *  c_kernel[kernel_mid + j];
+                    sum += (float)s_data[y_s][x_s + j*3] *  c_kernel[kernel_mid + j];
                 }
-                d_dst[y_image * pitch + 3*x_image + 0] = (unsigned char)sum[0];
-                d_dst[y_image * pitch + 3*x_image + 1] = (unsigned char)sum[1];
-                d_dst[y_image * pitch + 3*x_image + 2] = (unsigned char)sum[2];
+                d_dst[y_image * pitch + x_image] = (unsigned char)sum;
             }
             else{
-                d_dst[y_image * pitch + 3*x_image + 0] = s_data[y_s][3*x_s + 0];
-                d_dst[y_image * pitch + 3*x_image + 1] = s_data[y_s][3*x_s + 1];
-                d_dst[y_image * pitch + 3*x_image + 2] = s_data[y_s][3*x_s + 2];
+                d_dst[y_image * pitch + x_image] = s_data[y_s][x_s];
             }
         }
         x_s += ROW_TILE_WIDTH;
@@ -105,7 +95,7 @@ extern "C" void GpuConvolveSeparableRows(unsigned char *d_dst, unsigned char *d_
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    int block_grid_width = (int)ceil((float)image_width / (ROW_TILES_IN_BLOCK * ROW_TILE_WIDTH));
+    int block_grid_width = (int)ceil((float)image_width*3 / (ROW_TILES_IN_BLOCK * ROW_TILE_WIDTH));
     int block_grid_height = (int)ceil((float)image_height / (ROW_TILE_HEIGHT));
     printf("block_grid_width:%d block_grid_height:%d\n", block_grid_width, block_grid_height);
     printf("image_width:%d image_height:%d\n", image_width, image_height);
@@ -132,9 +122,9 @@ extern "C" void GpuConvolveSeparableRows(unsigned char *d_dst, unsigned char *d_
 }
 
 #define COL_TILE_WIDTH 16
-#define COL_TILE_HEIGHT 24
+#define COL_TILE_HEIGHT 10
 #define COL_VTILES_IN_BLOCK 8
-#define COL_HTILES_IN_BLOCK 4
+#define COL_HTILES_IN_BLOCK 2
 #define COL_BLOCK_WIDTH COL_TILE_WIDTH * COL_HTILES_IN_BLOCK
 #define COL_BLOCK_HEIGHT COL_TILE_HEIGHT * COL_VTILES_IN_BLOCK 
 
@@ -144,22 +134,28 @@ __global__ void convolveSeparableColsKernel(unsigned char* d_dst, unsigned char*
     int x_image, y_image, x_s, y_s;
 
     x_image = (blockIdx.x * COL_BLOCK_WIDTH) + x;
-    x_s = x; 
+    y_image = blockIdx.y * COL_BLOCK_HEIGHT - COL_TILE_HEIGHT + y;
+    x_s = x; y_s = y;
 
     for(int k = 0; k < COL_HTILES_IN_BLOCK; ++k){
         if (x_image < image_width*3){
-            y_image = blockIdx.y * COL_BLOCK_HEIGHT - COL_TILE_HEIGHT + y;
-            y_s = y;
             s_data[y_s][x_s] = y_image < 0 ? 0 : d_src[y_image * pitch + x_image];
-
-            for(int i = 1; i < COL_VTILES_IN_BLOCK + 2; ++i){
-                y_s += COL_TILE_HEIGHT;
-                y_image += COL_TILE_HEIGHT;
+            x_image += COL_TILE_WIDTH;
+            x_s += COL_TILE_WIDTH;
+        }
+    }
+    for(int i = 1; i < COL_VTILES_IN_BLOCK + 2; ++i){
+        x_image = (blockIdx.x * COL_BLOCK_WIDTH) + x;
+        x_s = x;
+        y_s += COL_TILE_HEIGHT;
+        y_image += COL_TILE_HEIGHT;
+        for(int k = 0; k < COL_HTILES_IN_BLOCK; ++k){
+            if (x_image < image_width*3){
                 s_data[y_s][x_s] = y_image < image_height ? d_src[y_image * pitch + x_image] : 0;
+                x_image += COL_TILE_WIDTH;
+                x_s += COL_TILE_WIDTH;
             }
         }
-        x_image += COL_TILE_WIDTH;
-        x_s += COL_TILE_WIDTH;
     }
     __syncthreads();
     x_image = (blockIdx.x * COL_BLOCK_WIDTH) + x;
