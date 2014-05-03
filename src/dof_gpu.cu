@@ -52,36 +52,46 @@ __global__ void convolveSeparableRowsKernel(unsigned char* d_dst, unsigned char*
     int x = threadIdx.x, y = threadIdx.y;
     int x_image, y_image, x_s, y_s;
 
-    x_image = (blockIdx.x * ROW_BLOCK_WIDTH - ROW_TILE_WIDTH)*3 + x;
+    x_image = blockIdx.x * ROW_BLOCK_WIDTH - ROW_TILE_WIDTH + x;
     y_image = blockIdx.y * ROW_BLOCK_HEIGHT + y;
     x_s = x; y_s = y;
-    s_data[y_s][x_s]   = x_image < 0 ? 0 : d_src[y_image * pitch + x_image];
+    s_data[y_s][3*x_s + 0] = x_image < 0 ? 0 : d_src[y_image * pitch + 3*x_image + 0];
+    s_data[y_s][3*x_s + 1] = x_image < 0 ? 0 : d_src[y_image * pitch + 3*x_image + 1];
+    s_data[y_s][3*x_s + 2] = x_image < 0 ? 0 : d_src[y_image * pitch + 3*x_image + 2];
 
-    for(int i = 1; i < 3*(ROW_TILES_IN_BLOCK + 2); ++i){
+    for(int i = 1; i < (ROW_TILES_IN_BLOCK + 2); ++i){
         x_s += ROW_TILE_WIDTH;
         x_image += ROW_TILE_WIDTH;
-        s_data[y_s][x_s]     = x_image >= 3*image_width ? 0 : d_src[y_image * pitch + x_image];
+        s_data[y_s][3*x_s + 0] = x_image >= image_width ? 0 : d_src[y_image * pitch + 3*x_image + 0];
+        s_data[y_s][3*x_s + 1] = x_image >= image_width ? 0 : d_src[y_image * pitch + 3*x_image + 1];
+        s_data[y_s][3*x_s + 2] = x_image >= image_width ? 0 : d_src[y_image * pitch + 3*x_image + 2];
     }
     __syncthreads();
 
-    x_image = (blockIdx.x * ROW_BLOCK_WIDTH)*3 + x;
-    x_s = ROW_TILE_WIDTH*3 + x;
+    x_image = blockIdx.x * ROW_BLOCK_WIDTH + x;
+    x_s = ROW_TILE_WIDTH + x;
 
-    for(int i = 0; i < 3*ROW_TILES_IN_BLOCK; ++i){
-        if (x_image < 3*image_width){
-            int kernel_radius = (int)floor(10*fabs(d_depth_map[y_image * depth_map_pitch/sizeof(float) + x_image/3] - focus_depth));
+    for(int i = 0; i < ROW_TILES_IN_BLOCK; ++i){
+        if (x_image < image_width){
+            int kernel_radius = (int)floor(10*fabs(d_depth_map[y_image * depth_map_pitch/sizeof(float) + x_image] - focus_depth));
             // d_dst[y_image * pitch + x_image] = kernel_radius * 255 / 10;
             if (kernel_radius > 0){
-                float sum = 0;
+                float sum[] = {0,0,0};
                 int kernel_start = kernel_radius * kernel_radius - 1;
                 int kernel_mid = kernel_start + kernel_radius;
                 for(int j = -kernel_radius; j <= kernel_radius; ++j){
-                    sum += (float)s_data[y_s][j * 3 + x_s] *  c_kernel[kernel_mid + j];
+                    sum[0] += (float)s_data[y_s][(x_s + j)*3 + 0] *  c_kernel[kernel_mid + j];
+                    sum[1] += (float)s_data[y_s][(x_s + j)*3 + 1] *  c_kernel[kernel_mid + j];
+                    sum[2] += (float)s_data[y_s][(x_s + j)*3 + 2] *  c_kernel[kernel_mid + j];
                 }
-                d_dst[y_image * pitch + x_image] = (unsigned char)sum;
+                d_dst[y_image * pitch + 3*x_image + 0] = (unsigned char)sum[0];
+                d_dst[y_image * pitch + 3*x_image + 1] = (unsigned char)sum[1];
+                d_dst[y_image * pitch + 3*x_image + 2] = (unsigned char)sum[2];
             }
             else{
-                d_dst[y_image * pitch + x_image] = s_data[y_s][x_s];
+                d_dst[y_image * pitch + 3*x_image + 0] = s_data[y_s][3*x_s + 0];
+                d_dst[y_image * pitch + 3*x_image + 1] = s_data[y_s][3*x_s + 1];
+                d_dst[y_image * pitch + 3*x_image + 2] = s_data[y_s][3*x_s + 2];
             }
         }
         x_s += ROW_TILE_WIDTH;
